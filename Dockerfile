@@ -1,14 +1,14 @@
-FROM debian:buster-slim
+FROM debian:buster-slim as build
 
-LABEL maintainer="Sebastian Ramirez <tiangolo@gmail.com>"
+LABEL maintainer="Jiří Janoušek <janousek.jiri@gmail.com>"
 
 # Versions of Nginx and nginx-rtmp-module to use
 ENV NGINX_VERSION nginx-1.16.1
 ENV NGINX_RTMP_MODULE_VERSION 1.2.1
 
-# Install dependencies
+# Install build dependencies
 RUN apt-get update && \
-    apt-get install -y ca-certificates openssl libssl-dev wget make gcc zlib1g zlib1g-dev libpcre3 libpcre3-dev && \
+    apt-get install -y ca-certificates openssl libssl-dev wget make gcc zlib1g-dev libpcre3-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Download and decompress Nginx
@@ -29,7 +29,7 @@ RUN mkdir -p /tmp/build/nginx-rtmp-module && \
 # it explicitly. Not just for order but to have it in the PATH
 RUN cd /tmp/build/nginx/${NGINX_VERSION} && \
     CFLAGS=-Wno-error ./configure \
-        --sbin-path=/usr/local/sbin/nginx \
+        --sbin-path=/usr/sbin/nginx \
         --conf-path=/etc/nginx/nginx.conf \
         --error-log-path=/var/log/nginx/error.log \
         --pid-path=/var/run/nginx/nginx.pid \
@@ -42,8 +42,21 @@ RUN cd /tmp/build/nginx/${NGINX_VERSION} && \
         --add-module=/tmp/build/nginx-rtmp-module/nginx-rtmp-module-${NGINX_RTMP_MODULE_VERSION} && \
     make -j $(getconf _NPROCESSORS_ONLN) && \
     make install && \
-    mkdir /var/lock/nginx && \
     rm -rf /tmp/build
+
+FROM debian:buster-slim
+
+# Install runtime dependencies
+RUN apt-get update && \
+    apt-get install -y ca-certificates openssl zlib1g libpcre3 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy nginx from build step
+COPY --from=build /etc/nginx /etc/nginx
+COPY --from=build /usr/sbin/nginx /usr/sbin/nginx
+
+# Creta nginx directories
+RUN mkdir /var/lock/nginx /var/log/nginx /var/run/nginx
 
 # Forward logs to Docker
 RUN ln -sf /dev/stdout /var/log/nginx/access.log && \
